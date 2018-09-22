@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html/template"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,72 +12,129 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"runtime"
 	"strings"
-	"time"
 
-	"cloud.google.com/go/compute/metadata"
 	"github.com/pkg/errors"
 	"golang.org/x/net/html"
-	"sevki.org/saturn/atlas"
+	"willnorris.com/go/newbase60"
+)
+
+var (
+	l = log.New(os.Stdout, "pan: ", 0)
 )
 
 type pan struct {
 	fs    http.FileSystem
 	cache string
+
+	templates map[string]string
 }
 
 // New returns a new TitanFS
-func New(fs http.FileSystem) http.FileSystem {
+func New(fs http.FileSystem, options ...Option) http.FileSystem {
 	dir, _ := ioutil.TempDir("", "pan")
-	return &pan{fs: fs, cache: dir}
+	p := &pan{
+		fs:        fs,
+		cache:     dir,
+		templates: make(map[string]string),
+	}
+	for _, option := range options {
+		option(p)
+	}
+	return p
+}
+
+type Option func(*pan)
+
+func WithTemplate(format, path string) Option {
+	return func(p *pan) { p.templates[format] = path }
 }
 
 func (p *pan) Open(name string) (http.File, error) {
-	start := time.Now()
+	const (
+		none = ""
+		html = ".html"
+		pdf  = ".pdf"
+	)
+
+	ext := path.Ext(name)
+	namePlain := strings.TrimSuffix(name, ext)
+
+	switch ext {
+	case none:
+	case pdf, html:
+		mdName := fmt.Sprintf("%s.%s", namePlain, "md")
+		f, err := p.fs.Open(mdName)
+		if err == nil {
+			_, fileName := path.Split(name)
+			return p.render(fileName, f)
+		}
+	}
+
 	f, err := p.fs.Open(name)
 	if err != nil {
 		return nil, err
 	}
+
+	return f, nil
+}
+
+func hash(s string) string {
+	h := fnv.New32a()
+	io.WriteString(h, s)
+	a := int(h.Sum32())
+	return newbase60.EncodeInt(a)
+}
+
+func (p *pan) render(name string, f http.File) (http.File, error) {
 	stt, _ := f.Stat()
-	if atlasSys, ok := stt.Sys().(atlas.SysInfo); ok && !atlasSys.ShouldRender {
-		return f, nil
-	} else if !ok {
+	if stt.IsDir() {
 		return f, nil
 	}
 
 	bytz, err := ioutil.ReadAll(f)
 	if err != nil {
+		l.Println( errors.Wrap(err, "titan read all"))
+
 		return nil, errors.Wrap(err, "titan read all")
 	}
 	buf := bytes.NewBuffer(nil)
 
+	cache := path.Join("/x/", hash(name)+"-"+stt.ModTime().Format("20060102150405"))
+	os.Mkdir(cache, 0644)
 	{ // run pre processor
-		args := []string{fmt.Sprintf("-img=%s", p.cache)}
+		l.Println("pp", "running")
+
+		args := []string{fmt.Sprintf("-img=%s", cache)}
 		cmd := exec.CommandContext(context.Background(), "pp", args...)
 		cmd.Stdin = bytes.NewBuffer(bytz)
 		stdErr := bytes.NewBuffer(nil)
 		cmd.Stdout = buf
 		cmd.Stderr = stdErr
 		if err := cmd.Run(); err != nil {
-			log.Println("pp", stdErr.String())
-			log.Println("pp", err.Error())
+			l.Println("pp", stdErr.String())
+			l.Println("pp", err.Error())
 			return nil, err
 		}
 	}
 	{ // run pandoc
 		outputFormat := "html5"
-		args := []string{"-f", "markdown"}
-		html := false
+		permalink, _ := path.Split(stt.Name())
+		args := []string{"-f", "markdown", "-V", fmt.Sprintf("permalink:%s", permalink)}
 		switch path.Ext(name) {
 		case "", ".html":
-			html = true
+
+			args = append(args, "-o", path.Join(cache, name))
 		case ".pdf":
 			outputFormat = "latex"
-			args = append(args, "-o", path.Join(p.cache, name))
+			args = append(args, "-o", path.Join(cache, name))
 		}
 		args = append(args, "-t", outputFormat)
-
+		if path, ok := p.templates[outputFormat]; ok {
+			args = append(args, "--template", path)
+		} else {
+			args = append(args, "-s")
+		}
 		cmd := exec.CommandContext(context.Background(), "pandoc", args...)
 		cmd.Stdin = buf
 		stdOut := bytes.NewBuffer(nil)
@@ -86,41 +143,15 @@ func (p *pan) Open(name string) (http.File, error) {
 		cmd.Stderr = stdErr
 
 		if err := cmd.Run(); err != nil {
-			log.Println("pandoc", stdErr.String())
+			l.Println("pandoc", stdErr.String())
 			return nil, err
 		}
-		body := stdOut.String()
-		if html {
-			title := h1(bytes.NewBufferString(body))
-			fx, err := os.Create(path.Join(p.cache, name))
-			if err != nil {
-				return nil, err
-			}
-			pageTemplate, err := template.New("").Parse(tmpl)
-			containterName, _ := os.Hostname()
-			instanceName, _ := metadata.InstanceID()
-			err = pageTemplate.Execute(fx, map[string]interface{}{
-				"Title":         title,
-				"Name":          name,
-				"Stripped":      strings.TrimSuffix(name, path.Ext(name)),
-				"RenderTime":    time.Now().Sub(start),
-				"RenderedAt":    time.Now(),
-				"GoVersion":     runtime.Version(),
-				"LastMod":       stt.ModTime(),
-				"Container":     containterName,
-				"Instance":      instanceName,
-				"Body":          template.HTML(body),
-				"PandocVersion": pandocVersion(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			fx.Close()
-		}
+
 	}
-	fx, _ := os.Open(path.Join(p.cache, name))
+	fx, _ := os.Open(path.Join(cache, name))
 	return fx, nil
 }
+
 func h1(r io.Reader) string {
 	z := html.NewTokenizer(r)
 	for {
@@ -137,39 +168,6 @@ func h1(r io.Reader) string {
 	}
 	return ""
 }
-
-var tmpl = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>{{ .Title }}</title>
-
-  <meta charset="utf-8">
-  <link rel="stylesheet" type="text/css" href="/saturn.css">
-</head>
-	<body>
-		{{ .Body }}
-		<hr/>
-		<footer>
-			<a href="javascript:history.back()">↩</a>
-	 		<a href="#">⇪</a>
-			<a href="{{ .Stripped }}.pdf">PDF</a>
-			<details>
-				render-time: {{ .RenderTime }}
-				<br/>
-				rendered-at: {{ .RenderedAt }}
-				<br/>
- 				last-modified: {{ .LastMod }}
-				<br/>
-				container:  {{ .Container }}
-				<br/>
-				go: {{ .GoVersion }}
-				<br/>
-				pandoc: {{ .PandocVersion }}
- 			</details>
-		</footer>
-	</body>
-</html>`
 
 func pandocVersion() string {
 	cmd := exec.Command("pandoc", "--version")

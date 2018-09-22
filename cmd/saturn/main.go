@@ -5,9 +5,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"path"
+	"syscall"
 
-	"sevki.org/saturn/atlas"
 	"sevki.org/saturn/pan"
 	"sevki.org/saturn/titan"
 	"upspin.io/config"
@@ -17,7 +19,7 @@ import (
 func main() {
 
 	var (
-		confName = flag.String("conf", "", "upspin-config")
+		confName = flag.String("conf", "/root/upspin/config", "upspin-config")
 		userName = flag.String("root-user", "", "upspin.User that namespace belongs to")
 		prefix   = flag.String("prefix", "", "prefix to be added to the urls")
 	)
@@ -46,9 +48,13 @@ func main() {
 			return
 		}
 		ext := path.Ext(r.URL.Path)
-		fs := atlas.New(ufs)
-
-		pan := http.FileServer(pan.New(fs))
+		fs := ufs
+		pan := http.FileServer(
+			pan.New(fs,
+				pan.WithTemplate("latex", "/go/src/sevki.org/saturn/templates/default.latex"),
+				pan.WithTemplate("html5", "/go/src/sevki.org/saturn/templates/web.html"),
+			),
+		)
 		switch ext {
 		case ".latex":
 			w.Header().Set("Content-Type", "application/x-latex")
@@ -63,9 +69,18 @@ func main() {
 			pan.ServeHTTP(w, r)
 		}
 	})
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		os.Exit(0)
+	}()
+
+	http.Handle("/x/", http.StripPrefix("/x/", http.FileServer(http.Dir("/x"))))
+	http.Handle("/", renderer)
 
 	log.Fatal(
-		http.ListenAndServe(":8080", renderer),
+		http.ListenAndServe(":8080", nil),
 	)
 }
 func redir(h http.Handler) http.Handler {

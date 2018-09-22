@@ -1,0 +1,28 @@
+FROM golang:1.10
+
+RUN apt-get update -y
+
+RUN apt-get install git texlive -y
+RUN apt-get install xz-utils -y
+RUN apt-get install graphviz -y
+RUN apt-get install gawk -y
+
+ADD ./vendor /go/src/sevki.org/saturn/vendor
+
+RUN go get \
+ cloud.google.com/go/compute/metadata \
+ golang.org/x/net/html \
+ gopkg.in/russross/blackfriday.v2 \
+ github.com/pkg/errors \
+ willnorris.com/go/newbase60 \
+ upspin.io/... \
+ gopkg.in/yaml.v2 \
+ github.com/gorilla/feeds \
+ github.com/golang/freetype 
+
+ADD https://github.com/jgm/pandoc/releases/download/2.1.2/pandoc-2.1.2-1-amd64.deb /pandoc-2.1.2-1-amd64.deb
+RUN dpkg -i /pandoc-2.1.2-1-amd64.deb
+
+ADD http://cdsoft.fr/pp/pp-linux-x86_64.txz /pp-2.3.3.txz
+RUN tar -xf /pp-2.3.3.txz -C /
+RUN mv /pp /usr/bin/pp

@@ -1,0 +1,7 @@
+IMAGE=sevki/saturn:`date +%Y%m%d%H%M.%S`
+
+echo "Building $IMAGE"
+docker build -t $IMAGE .
+docker push $IMAGE
+kubectl set image deployment/ffbytes ffbytes=$IMAGE
+kubectl set image deployment/sevki sevki=$IMAGE

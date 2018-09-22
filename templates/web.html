@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>$title$</title>
+
+	<meta charset="utf-8">
+	$for(author)$
+	<meta name="author" content="$author.name$" />
+	$endfor$
+  	<link rel="stylesheet" type="text/css" href="/saturn.css"> 
+	<link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">  
+</head>
+<body>
+	<div style="text-align: center">
+		<h1>$title$</h1>
+		<p>$date$</p>
+ 		<table style="margin-left:auto; margin-right:auto;">
+			<tr>
+			$for(author)$
+				<td style="padding: 5px">
+					$if(author.name)$
+						$author.name$$if(author.affiliation)$<br/> $author.affiliation$$endif$
+					$else$
+						$author$
+					$endif$
+				</td>
+			$endfor$
+			</tr>
+		</table>
+	</div>
+ 	$body$
+	<hr/>
+	<footer>
+		<a href="javascript:history.back()">↩</a>
+	 	<a href="#">⇪</a>
+		<a href="index.pdf">PDF</a>
+	</footer>
+	</body>
+</html>

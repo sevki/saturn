@@ -1,0 +1,12 @@
+<footer>
+		    <p>
+			Except as noted,
+			the content of this page is licensed under
+			the <a href="//creativecommons.org/licenses/by/3.0/legalcode">
+			Creative Commons Attribution 3.0 License</a>,<br>
+			and code is licensed under
+			a <a href="//github.com/sevki/Posts/blob/master/LICENSE">MIT
+			license</a>.
+		    </p>
+		    <small>Built with go1.10</small>
+		</footer>
