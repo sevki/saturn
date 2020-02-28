@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"code.google.com/p/rsc/qr"
-	"code.google.com/p/rsc/qr/coding"
+	"github.com/sevki/rsc/qr"
+	"github.com/sevki/rsc/qr/coding"
 	"github.com/golang/freetype"
 )
 

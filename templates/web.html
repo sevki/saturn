@@ -1,14 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
+	$if(title)$
 	<title>$title$</title>
-
+	$else$	
+	<title>sevki.io</title>
+	$endif$
+	
 	<meta charset="utf-8">
+	
 	$for(author)$
-	<meta name="author" content="$author.name$" />
+	<meta name="author" content="$author.name$" /> 
 	$endfor$
-  	<link rel="stylesheet" type="text/css" href="/saturn.css"> 
-	<link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">  
+
+	<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+	<link rel="stylesheet" type="text/css" href="/saturn.css"> 
+	<style>
+	.footnote-back {
+		visibility: hidden;
+		position: relative;
+	}
+	.footnote-back:after {
+		visibility: visible;
+		position: absolute;
+ 		left: 0;
+		content: "⮌";
+	}
+	</style>
 </head>
 <body>
 	<div style="text-align: center">
@@ -31,9 +49,12 @@
  	$body$
 	<hr/>
 	<footer>
-		<a href="javascript:history.back()">↩</a>
+		<a href="javascript:history.back()">⮌</a>
 	 	<a href="#">⇪</a>
 		<a href="index.pdf">PDF</a>
+		<br/>
+		<br/>
+		last-updated: $rt$ 
 	</footer>
 	</body>
 </html>

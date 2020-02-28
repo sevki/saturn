@@ -1,4 +1,6 @@
-FROM golang:1.10
+FROM debian:buster
+
+RUN echo "deb http://cloudflaremirrors.com/debian buster main" > /etc/apt/sources.list
 
 RUN apt-get update -y
 
@@ -6,23 +8,29 @@ RUN apt-get install git texlive -y
 RUN apt-get install xz-utils -y
 RUN apt-get install graphviz -y
 RUN apt-get install gawk -y
+RUN apt-get install gcc -y
+RUN apt-get install libc-bin -y
+RUN apt-get install curl -y
+RUN apt-get install gnupg2 -y
+RUN apt-get install fuse -y
+RUN apt-get install jq -y
 
-ADD ./vendor /go/src/sevki.org/saturn/vendor
-
-RUN go get \
- cloud.google.com/go/compute/metadata \
- golang.org/x/net/html \
- gopkg.in/russross/blackfriday.v2 \
- github.com/pkg/errors \
- willnorris.com/go/newbase60 \
- upspin.io/... \
- gopkg.in/yaml.v2 \
- github.com/gorilla/feeds \
- github.com/golang/freetype 
+ADD https://dl.google.com/go/go1.14.linux-amd64.tar.gz /go1.14.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf /go1.14.linux-amd64.tar.gz
 
 ADD https://github.com/jgm/pandoc/releases/download/2.1.2/pandoc-2.1.2-1-amd64.deb /pandoc-2.1.2-1-amd64.deb
 RUN dpkg -i /pandoc-2.1.2-1-amd64.deb
 
+
+
 ADD http://cdsoft.fr/pp/pp-linux-x86_64.txz /pp-2.3.3.txz
 RUN tar -xf /pp-2.3.3.txz -C /
 RUN mv /pp /usr/bin/pp
+
+ENV GOPATH /go
+ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
+
+RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
+
+RUN go get -u github.com/googlecloudplatform/gcsfuse
+RUN go get -u github.com/cloudflare/roughtime/...

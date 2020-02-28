@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -21,15 +22,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/bcampbell/fuzzytime"
+	"github.com/araddon/dateparse"
 	"github.com/gorilla/feeds"
 	yaml "gopkg.in/yaml.v2"
 	"sevki.org/saturn/pan"
 	"sevki.org/saturn/qr"
-	"sevki.org/saturn/titan"
 	"sevki.org/x/pretty"
-	"upspin.io/config"
-	"upspin.io/transports"
 )
 
 var (
@@ -37,34 +35,17 @@ var (
 	fs http.FileSystem
 )
 
+var (
+	root = flag.String("root", "/pub", "root")
+)
+
 func main() {
-
-	var (
-		confName = flag.String("conf", "/root/upspin/config", "upspin-config")
-		userName = flag.String("root-user", "", "upspin.User that namespace belongs to")
-		prefix   = flag.String("prefix", "", "prefix to be added to the urls")
+	p := pan.New(
+		http.Dir(*root),
+		pan.WithTemplate("html5", "/sevki.org/saturn/templates/blog.html"),
+		pan.WithTemplate("latex", "/sevki.org/saturn/templates/default.latex"),
 	)
-
-	flag.Parse()
-
-	cfg, err := config.FromFile(*confName)
-	if err != nil {
-		l.Fatal(err)
-	}
-	transports.Init(cfg)
-
-	opts := []titan.Option{}
-	if userName != nil {
-		l.Printf("with username: %s\n", *userName)
-		opts = append(opts, titan.WithRootUser(*userName))
-	}
-	if prefix != nil {
-		l.Printf("with prefix: %s\n", *prefix)
-		opts = append(opts, titan.WithPrefix(*prefix))
-	}
-
-	ufs := titan.New(cfg, opts...)
-	a := &atlas{fs: ufs}
+	a := &atlas{fs: p}
 	go a.reload()
 	http.Handle("/x/", http.StripPrefix("/x/", http.FileServer(http.Dir("/x"))))
 	http.Handle("/qr/", http.StripPrefix("/qr/", http.HandlerFunc(qr.Qart)))
@@ -96,19 +77,14 @@ type postTime struct {
 }
 
 // YYYY-MM-DD hh:mm:ss tz
-const fuzzyFormat = "2006-01-02 15:04:05"
+const fuzzyFormat = "2006-01-02 15:04:05-07:00"
 
 func (t *postTime) UnmarshalText(text []byte) error {
-	ft, _, err := fuzzytime.Extract(string(text))
+	postTime, err := dateparse.ParseAny(string(text))
 	if err != nil {
 		log.Println(err)
 	}
-
-	newt, err := time.Parse(fuzzyFormat, ft.String())
-	if err != nil {
-		log.Println(err)
-	}
-	t.Time = newt
+	t.Time = postTime
 	return nil
 }
 
@@ -131,16 +107,13 @@ func (a byDate) Less(i, j int) bool { return a[i].Date.After(a[j].Date.Time) }
 
 func (a *atlas) reload() {
 	for {
-		p := pan.New(a.fs)
-		f, err := p.Open("/")
-		if err != nil {
-			l.Println(err)
-			return
-		}
+		f, _ := a.fs.Open("/")
+
 		files, err := f.Readdir(1000)
-		if err != nil {
-			l.Println(err)
-			return
+		if err != nil && len(files) < 1 {
+			l.Println("read dir", err)
+			time.Sleep(time.Second * 30)
+			continue
 		}
 		f.Close()
 		x := []post{}
@@ -149,9 +122,8 @@ func (a *atlas) reload() {
 		for _, file := range files {
 			if file.IsDir() {
 				slug := file.Name()
-				f, err = p.Open(path.Join(slug, "index.md"))
+				f, err = a.fs.Open(path.Join(slug, "index.md"))
 				if err != nil {
-					l.Println(err)
 					continue
 				}
 				p := parseHeader(f)
@@ -215,16 +187,11 @@ func (a *atlas) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/":
 		a.index(w, r)
 		return
-
 	}
 
 	ext := path.Ext(r.URL.Path)
 
-	p := pan.New(a.fs,
-		pan.WithTemplate("html5", "/go/src/sevki.org/saturn/templates/blog.html"),
-		pan.WithTemplate("latex", "/go/src/sevki.org/saturn/templates/default.latex"),
-	)
-	panServer := http.FileServer(p)
+	panServer := http.FileServer(a.fs)
 	switch ext {
 	case ".latex":
 		w.Header().Set("Content-Type", "application/x-latex")
@@ -244,9 +211,10 @@ func (a *atlas) redir(w http.ResponseWriter, r *http.Request) {
 }
 func (a *atlas) feed(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
+	u, _ := url.Parse("https://fistfulofbytes.com")
 	feed := &feeds.Feed{
 		Title:       "fistful of bytes",
-		Link:        &feeds.Link{Href: "https://fistfulofbytes.com"},
+		Link:        &feeds.Link{Href: u.String()},
 		Description: "sevki's blog",
 		Author:      &feeds.Author{Name: "Sevki", Email: "s@sevki.org"},
 		Created:     now,
@@ -254,9 +222,12 @@ func (a *atlas) feed(w http.ResponseWriter, r *http.Request) {
 
 	feed.Items = []*feeds.Item{}
 	for _, post := range a.posts {
+		x := *u
+		x.Path = post.Slug
 		feed.Items = append(feed.Items, &feeds.Item{
+			Id:          qr.Hash(post.Slug),
 			Title:       post.Title,
-			Link:        &feeds.Link{Href: post.Slug},
+			Link:        &feeds.Link{Href: x.String() +"/"},
 			Description: post.Abstract,
 			Author: &feeds.Author{
 				Name:  post.Author[0].Name,
@@ -281,6 +252,7 @@ func (a *atlas) index(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if a.posts == nil {
 		io.WriteString(w, "Server not ready")
+		return
 	}
 
 	instanceName, _ := metadata.InstanceID()
@@ -306,7 +278,7 @@ var index = `<html>
 	<head>
 		<title>fistfulofbytes</title>
 		<link rel="stylesheet" type="text/css" href="/style.css">
-  		<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/octicons/4.4.0/font/octicons.css">	
+  		<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/octicons/4.4.0/font/octicons.css">
 		<link rel="icon" type="image/png" href="/qr/">
 
 	</head>
@@ -324,7 +296,7 @@ var index = `<html>
 			<details>
  				<summary>Feed <span style="" class="octicon octicon-rss"></span></summary>
 				<ul>
-					<li><a href="/feed.atom">Atom</a></li>	
+					<li><a href="/feed.atom">Atom</a></li>
 					<li><a href="/feed.rss">RSS</a></li>
 					<li><a href="/feed.json">JSON</a></li>
 				</ul>
@@ -336,12 +308,12 @@ var index = `<html>
 	<main>
 		{{- range .Files -}}
  		<p>
-			<a href="/{{ .Slug }}" >{{ .Title }}</a>	
+			<a href="/{{ .Slug }}" >{{ .Title }}</a>
 			<br/>
 			{{ range .Author }} {{ .Name }} {{ end }}
 			<br/>
-			{{ .Date.Format "2 Jan 2006" }} 
-		 
+			{{ .Date.Format "2 Jan 2006" }}
+
 		</p>
  		{{- end -}}
 	</main>

@@ -4,42 +4,27 @@ import (
 	"flag"
 	"io"
 	"log"
+	"mime"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path"
+	"strings"
 	"syscall"
+	"time"
 
 	"sevki.org/saturn/pan"
-	"sevki.org/saturn/titan"
-	"upspin.io/config"
-	"upspin.io/transports"
+)
+
+var (
+	root = flag.String("root", "/pub", "root")
 )
 
 func main() {
 
-	var (
-		confName = flag.String("conf", "/root/upspin/config", "upspin-config")
-		userName = flag.String("root-user", "", "upspin.User that namespace belongs to")
-		prefix   = flag.String("prefix", "", "prefix to be added to the urls")
-	)
-
 	flag.Parse()
-
-	cfg, err := config.FromFile(*confName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	transports.Init(cfg)
-	opts := []titan.Option{}
-	if userName != nil {
-		opts = append(opts, titan.WithRootUser(*userName))
-	}
-	if prefix != nil {
-		opts = append(opts, titan.WithPrefix(*prefix))
-	}
-
-	ufs := titan.New(cfg, opts...)
 
 	renderer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -48,22 +33,18 @@ func main() {
 			return
 		}
 		ext := path.Ext(r.URL.Path)
-		fs := ufs
+
 		pan := http.FileServer(
-			pan.New(fs,
-				pan.WithTemplate("latex", "/go/src/sevki.org/saturn/templates/default.latex"),
-				pan.WithTemplate("html5", "/go/src/sevki.org/saturn/templates/web.html"),
+			pan.New(
+				http.Dir(*root),
+				pan.WithTemplate("latex", "/sevki.org/saturn/templates/default.latex"),
+				pan.WithTemplate("html5", "/sevki.org/saturn/templates/web.html"),
 			),
 		)
+
 		switch ext {
 		case ".latex":
 			w.Header().Set("Content-Type", "application/x-latex")
-			pan.ServeHTTP(w, r)
-		case ".pdf":
-			w.Header().Set("Content-Type", "application/pdf")
-			pan.ServeHTTP(w, r)
-		case ".html":
-			w.Header().Set("Content-Type", "text/html")
 			pan.ServeHTTP(w, r)
 		default:
 			pan.ServeHTTP(w, r)
@@ -77,17 +58,61 @@ func main() {
 	}()
 
 	http.Handle("/x/", http.StripPrefix("/x/", http.FileServer(http.Dir("/x"))))
-	http.Handle("/", renderer)
+	http.Handle("/", mimeTypeHandler(renderer))
 
 	log.Fatal(
 		http.ListenAndServe(":8080", nil),
 	)
 }
-func redir(h http.Handler) http.Handler {
+
+func mimeTypeHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			r.URL.Path = "/index"
+		mimetype := "application/octet-stream"
+		ext := path.Ext(r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/") {
+			ext = ".html"
 		}
+		mt := mime.TypeByExtension(ext)
+		if mt != "" {
+			w.Header().Set("Content-Type", mt)
+			h.ServeHTTP(w, r)
+			return
+		} else {
+			rw := httptest.NewRecorder()
+			h.ServeHTTP(rw, r)
+
+			contentType := http.DetectContentType(rw.Body.Bytes())
+			w.Header().Set("Content-Type", contentType)
+			io.Copy(w, rw.Body)
+			return
+		}
+		w.Header().Set("Content-Type", mimetype)
 		h.ServeHTTP(w, r)
+		return
 	})
+}
+
+func sync() {
+	f, err := os.Create("/pub/_log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for {
+
+		cmd := exec.Command("gsutil",
+			"rsync",
+			"-d",
+			"-r",
+			"gs://sevki-io",
+			*root,
+		)
+
+		cmd.Stdout = io.MultiWriter(f, os.Stdout)
+		err := cmd.Run()
+		if err != nil {
+			log.Fatal(err)
+		}
+		time.Sleep(1 * time.Minute)
+	}
+
 }

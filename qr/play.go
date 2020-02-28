@@ -1,7 +1,7 @@
 // Copyright 2012 The Go Authors.  All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
+  
 /*
 QR data layout
 
@@ -38,16 +38,16 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
+	"os" 
 	"path"
 	"sort"
 	"strings"
 
-	"code.google.com/p/rsc/appfs/fs"
-	"code.google.com/p/rsc/gf256"
-	"code.google.com/p/rsc/qr"
-	"code.google.com/p/rsc/qr/coding"
-	"code.google.com/p/rsc/qr/web/resize"
+	"github.com/sevki/rsc/appfs/fs"
+	"github.com/sevki/rsc/gf256"
+	"github.com/sevki/rsc/qr"
+	"github.com/sevki/rsc/qr/coding"
+	"github.com/sevki/rsc/qr/web/resize"
 	"willnorris.com/go/newbase60"
 )
 

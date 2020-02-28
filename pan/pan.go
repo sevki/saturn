@@ -13,9 +13,15 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"time"
+
+	"github.com/sevki/google-roughtime/go/config"
+
+	"github.com/sevki/roughtime"
 
 	"github.com/pkg/errors"
 	"golang.org/x/net/html"
+	"sevki.org/x/debug"
 	"willnorris.com/go/newbase60"
 )
 
@@ -24,19 +30,24 @@ var (
 )
 
 type pan struct {
-	fs    http.FileSystem
-	cache string
+	fs http.FileSystem
 
+	servers   []config.Server
+	prev      *roughtime.Roughtime
+	cache     string
 	templates map[string]string
 }
 
 // New returns a new TitanFS
 func New(fs http.FileSystem, options ...Option) http.FileSystem {
+	servers, _, _ := roughtime.LoadConfig("/go/src/github.com/cloudflare/roughtime/ecosystem.json")
+
 	dir, _ := ioutil.TempDir("", "pan")
 	p := &pan{
 		fs:        fs,
 		cache:     dir,
 		templates: make(map[string]string),
+		servers:   servers,
 	}
 	for _, option := range options {
 		option(p)
@@ -51,6 +62,7 @@ func WithTemplate(format, path string) Option {
 }
 
 func (p *pan) Open(name string) (http.File, error) {
+	oname := name
 	const (
 		none = ""
 		html = ".html"
@@ -59,24 +71,62 @@ func (p *pan) Open(name string) (http.File, error) {
 
 	ext := path.Ext(name)
 	namePlain := strings.TrimSuffix(name, ext)
+	l.Printf("get: name=%s", name)
 
 	switch ext {
-	case none:
 	case pdf, html:
-		mdName := fmt.Sprintf("%s.%s", namePlain, "md")
-		f, err := p.fs.Open(mdName)
+		mname := fmt.Sprintf("%s.%s", namePlain, "md")
+		f, err := p.fs.Open(mname)
 		if err == nil {
-			_, fileName := path.Split(name)
-			return p.render(fileName, f)
+			//	_, fileName := path.Split(oname)
+			l.Printf("render: name=%s", name)
+			return p.render(name, oname, f)
 		}
 	}
 
+	l.Printf("open: name=%s", name)
 	f, err := p.fs.Open(name)
+	if err != nil {
+		l.Printf("open errored: name=%s err=%v", name, err)
+	}
+	return f, err
+}
+
+type saturnFile struct {
+	http.File
+
+	name        string
+	contentType string
+}
+
+type saturnInfo struct {
+	os.FileInfo
+
+	name string
+}
+
+func (f *saturnFile) ContentType() string {
+	switch f.contentType {
+	case "html5":
+		return "text/html"
+	case "latex":
+		return "application/pdf"
+
+	}
+	return "application/octet-stream"
+}
+
+func (i *saturnInfo) Name() string {
+	l.Println(i.name)
+	return i.name
+}
+
+func (f *saturnFile) Stat() (os.FileInfo, error) {
+	stat, err := f.File.Stat()
 	if err != nil {
 		return nil, err
 	}
-
-	return f, nil
+	return &saturnInfo{stat, f.name}, nil
 }
 
 func hash(s string) string {
@@ -86,7 +136,8 @@ func hash(s string) string {
 	return newbase60.EncodeInt(a)
 }
 
-func (p *pan) render(name string, f http.File) (http.File, error) {
+func (p *pan) render(name, fake string, f http.File) (http.File, error) {
+
 	stt, _ := f.Stat()
 	if stt.IsDir() {
 		return f, nil
@@ -94,14 +145,27 @@ func (p *pan) render(name string, f http.File) (http.File, error) {
 
 	bytz, err := ioutil.ReadAll(f)
 	if err != nil {
-		l.Println( errors.Wrap(err, "titan read all"))
+		l.Println(errors.Wrap(err, "pan read all"))
 
-		return nil, errors.Wrap(err, "titan read all")
+		return nil, errors.Wrap(err, "pan read all")
 	}
-	buf := bytes.NewBuffer(nil)
+
+	dir, file := path.Split(name)
 
 	cache := path.Join("/x/", hash(name)+"-"+stt.ModTime().Format("20060102150405"))
+	outputFormat := "html5"
+	switch path.Ext(name) {
+	case ".pdf":
+		outputFormat = "latex"
+	}
+	if fx, err := os.Open(path.Join(cache, file)); err == nil {
+		return &saturnFile{fx, name, outputFormat}, nil
+	}
+
+	buf := bytes.NewBuffer(nil)
+
 	os.Mkdir(cache, 0644)
+
 	{ // run pre processor
 		l.Println("pp", "running")
 
@@ -112,44 +176,61 @@ func (p *pan) render(name string, f http.File) (http.File, error) {
 		cmd.Stdout = buf
 		cmd.Stderr = stdErr
 		if err := cmd.Run(); err != nil {
-			l.Println("pp", stdErr.String())
+			debug.Indent(stdErr, 1)
+			l.Printf(`pp: %v
+%s`, args, stdErr.String())
 			l.Println("pp", err.Error())
 			return nil, err
 		}
 	}
-	{ // run pandoc
-		outputFormat := "html5"
-		permalink, _ := path.Split(stt.Name())
-		args := []string{"-f", "markdown", "-V", fmt.Sprintf("permalink:%s", permalink)}
-		switch path.Ext(name) {
-		case "", ".html":
 
-			args = append(args, "-o", path.Join(cache, name))
-		case ".pdf":
-			outputFormat = "latex"
-			args = append(args, "-o", path.Join(cache, name))
+	{ // run pandoc
+
+		results := roughtime.Do(p.servers, 4, time.Second*1, p.prev)
+		chain := roughtime.NewChain(results)
+		if cool, err := chain.Verify(p.prev); err != nil && cool {
+			return nil, err
 		}
+		p.prev = results[0].Roughtime
+		args := []string{
+			"-f",
+			"markdown",
+			"-V", fmt.Sprintf("permalink:%s", dir),
+			"-V", fmt.Sprintf("rt:%s", results[0].String()),
+		}
+
+		args = append(args, "-o", path.Join(cache, file))
+
 		args = append(args, "-t", outputFormat)
 		if path, ok := p.templates[outputFormat]; ok {
 			args = append(args, "--template", path)
 		} else {
 			args = append(args, "-s")
 		}
+
 		cmd := exec.CommandContext(context.Background(), "pandoc", args...)
 		cmd.Stdin = buf
 		stdOut := bytes.NewBuffer(nil)
 		stdErr := bytes.NewBuffer(nil)
 		cmd.Stdout = stdOut
 		cmd.Stderr = stdErr
-
+		fmt.Printf("running pandoc: %v\n", args)
 		if err := cmd.Run(); err != nil {
-			l.Println("pandoc", stdErr.String())
+			debug.Indent(stdErr, 1)
+			l.Printf(`pandoc: %v
+	args= %v
+%s
+`,
+				err,
+				args,
+				stdErr.String(),
+			)
 			return nil, err
 		}
 
 	}
-	fx, _ := os.Open(path.Join(cache, name))
-	return fx, nil
+	fx, _ := os.Open(path.Join(cache, file))
+	return &saturnFile{fx, name, outputFormat}, nil
 }
 
 func h1(r io.Reader) string {
@@ -177,6 +258,7 @@ func pandocVersion() string {
 	}
 	return string(stdoutStderr)
 }
+
 func version() string {
 	cmd := exec.Command("git", "describe", "--always")
 	stdoutStderr, err := cmd.CombinedOutput()

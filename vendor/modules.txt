@@ -1,0 +1,101 @@
+# cloud.google.com/go v0.28.0
+cloud.google.com/go/compute/metadata
+# github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
+github.com/araddon/dateparse
+# github.com/bcampbell/fuzzytime v0.0.0-20170619084447-6a03581b01a2
+github.com/bcampbell/fuzzytime
+# github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+github.com/golang/freetype
+github.com/golang/freetype/raster
+github.com/golang/freetype/truetype
+# github.com/golang/protobuf v1.2.0
+github.com/golang/protobuf/proto
+# github.com/gorilla/feeds v1.1.0
+github.com/gorilla/feeds
+# github.com/pkg/errors v0.8.0
+github.com/pkg/errors
+# github.com/sevki/google-roughtime v0.0.0-20180922011334-bf2633c8bb6e
+github.com/sevki/google-roughtime/go/config
+github.com/sevki/google-roughtime/go/protocol
+# github.com/sevki/roughtime v0.0.0-20180930191008-9599845c2c60
+github.com/sevki/roughtime
+# github.com/sevki/rsc v0.0.0-20180922223921-f15a37118381
+github.com/sevki/rsc/appfs/fs
+github.com/sevki/rsc/gf256
+github.com/sevki/rsc/qr
+github.com/sevki/rsc/qr/coding
+github.com/sevki/rsc/qr/web/resize
+github.com/sevki/rsc/appfs/proto
+# golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b
+golang.org/x/crypto/ed25519
+golang.org/x/crypto/ed25519/internal/edwards25519
+golang.org/x/crypto/hkdf
+# golang.org/x/image v0.0.0-20180920235150-e1a1ede6891c
+golang.org/x/image/font
+golang.org/x/image/math/fixed
+# golang.org/x/net v0.0.0-20180921000356-2f5d2388922f
+golang.org/x/net/html
+golang.org/x/net/context
+golang.org/x/net/context/ctxhttp
+golang.org/x/net/html/atom
+# golang.org/x/text v0.3.0
+golang.org/x/text/secure/precis
+golang.org/x/text/cases
+golang.org/x/text/language
+golang.org/x/text/runes
+golang.org/x/text/secure/bidirule
+golang.org/x/text/transform
+golang.org/x/text/unicode/norm
+golang.org/x/text/width
+golang.org/x/text/internal
+golang.org/x/text/internal/tag
+golang.org/x/text/unicode/bidi
+# gopkg.in/yaml.v2 v2.2.1
+gopkg.in/yaml.v2
+# sevki.org/x v1.0.0
+sevki.org/x/pretty
+sevki.org/x/debug
+sevki.org/x/time
+# upspin.io v0.0.0-20180816050821-c137ad0d6be9
+upspin.io/client
+upspin.io/errors
+upspin.io/path
+upspin.io/upspin
+upspin.io/access
+upspin.io/bind
+upspin.io/client/clientutil
+upspin.io/client/file
+upspin.io/flags
+upspin.io/metric
+upspin.io/pack
+upspin.io/pack/eeintegrity
+upspin.io/pack/plain
+upspin.io/log
+upspin.io/user
+upspin.io/config
+upspin.io/transports
+upspin.io/factotum
+upspin.io/pack/internal
+upspin.io/pack/packutil
+upspin.io/pack/ee
+upspin.io/dir/inprocess
+upspin.io/dir/remote
+upspin.io/dir/unassigned
+upspin.io/key/transports
+upspin.io/store/transports
+upspin.io/serverutil
+upspin.io/valid
+upspin.io/rpc
+upspin.io/upspin/proto
+upspin.io/key/inprocess
+upspin.io/key/remote
+upspin.io/key/unassigned
+upspin.io/key/usercache
+upspin.io/store/inprocess
+upspin.io/store/remote
+upspin.io/store/unassigned
+upspin.io/cache
+upspin.io/rpc/local
+upspin.io/key/sha256key
+# willnorris.com/go/newbase60 v1.0.0
+willnorris.com/go/newbase60

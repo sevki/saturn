@@ -1,9 +1,21 @@
+FROM sevki/saturn:base as builder
+
+ADD . /sevki.org/saturn
+
+WORKDIR /sevki.org/saturn
+
+RUN go install -mod vendor -v ./cmd/...
+
 FROM sevki/saturn:base
 
-ADD . /go/src/sevki.org/saturn
+ADD templates /sevki.org/saturn/templates
 
-RUN go get -v sevki.org/saturn/cmd/...
-RUN mkdir /x # pan/pan.go://x//
+COPY --from=builder /go/bin/saturn /go/bin/saturn
+COPY --from=builder /go/bin/atlas /go/bin/atlas
+
+
+RUN mkdir /x
+RUN mkdir /pub
 
 ENTRYPOINT saturn
 
